@@ -117,8 +117,8 @@
       <h2>02 · Işınlama Ayarları</h2>
       <div class="row"><label>Kalite (sadece görsellerde geçerli)</label><span class="val" id="qualVal">Orta</span></div>
       <input type="range" id="qualSlider" min="0" max="2" step="1" value="1">
-      <div class="row"><label>Hız (kare/saniye)</label><span class="val" id="speedVal">8</span></div>
-      <input type="range" id="speedSlider" min="3" max="15" step="1" value="8">
+      <div class="row"><label>Hız (kare/saniye)</label><span class="val" id="speedVal">4</span></div>
+      <input type="range" id="speedSlider" min="2" max="12" step="1" value="4">
       <div class="row"><label>Sürekli tekrar et</label>
         <input type="checkbox" id="loopCheck" checked style="accent-color:var(--signal); width:18px;height:18px;">
       </div>
@@ -204,7 +204,7 @@
     });
   });
 
-  const CHUNK_SIZE = 340; // base64 chars per QR payload
+  const CHUNK_SIZE = 120; // base64 chars per QR payload — küçük tutuluyor ki QR modülleri büyük ve ekrandan ekrana kolay okunsun
   const QUALITY_PRESETS = [
     {label:'Düşük', maxDim:480, jpegQ:0.45},
     {label:'Orta',  maxDim:720, jpegQ:0.55},
@@ -331,7 +331,7 @@
       text: text,
       width: 280,
       height: 280,
-      correctLevel: QRCode.CorrectLevel.L
+      correctLevel: QRCode.CorrectLevel.M
     });
   }
 
@@ -421,6 +421,8 @@
       statusPill.style.display = 'flex';
       document.getElementById('camWarn').style.display = 'none';
       scanning = true;
+      scanFrameCount = 0;
+      scanHitCount = 0;
       requestAnimationFrame(scanLoop);
     }catch(err){
       document.getElementById('camWarn').style.display = 'block';
@@ -440,17 +442,31 @@
   camStartBtn.addEventListener('click', startCamera);
   camStopBtn.addEventListener('click', stopCamera);
 
+  let scanFrameCount = 0;
+  let scanHitCount = 0;
+  const fpsLabelEl = document.getElementById('fpsLabel');
+  const MAX_SCAN_DIM = 640; // downscaled for faster decode -> more attempts per second
+
   function scanLoop(){
     if(!scanning) return;
     if(video.readyState === video.HAVE_ENOUGH_DATA){
-      const w = video.videoWidth, h = video.videoHeight;
-      scanCanvas.width = w; scanCanvas.height = h;
-      const ctx = scanCanvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, w, h);
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const code = jsQR(imgData.data, w, h, { inversionAttempts: 'dontInvert' });
-      if(code && code.data){
-        handlePayload(code.data);
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if(vw && vh){
+        const scale = Math.min(1, MAX_SCAN_DIM / Math.max(vw, vh));
+        const w = Math.round(vw * scale), h = Math.round(vh * scale);
+        scanCanvas.width = w; scanCanvas.height = h;
+        const sctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+        sctx.drawImage(video, 0, 0, w, h);
+        const imgData = sctx.getImageData(0, 0, w, h);
+        const code = jsQR(imgData.data, w, h, { inversionAttempts: 'attemptBoth' });
+        scanFrameCount++;
+        if(code && code.data){
+          scanHitCount++;
+          handlePayload(code.data);
+        }
+        if(fpsLabelEl && scanFrameCount % 15 === 0){
+          fpsLabelEl.textContent = `${scanFrameCount} kare · ${scanHitCount} bulundu`;
+        }
       }
     }
     requestAnimationFrame(scanLoop);
