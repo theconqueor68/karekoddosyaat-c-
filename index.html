@@ -449,7 +449,7 @@
 
   function scanLoop(){
     if(!scanning) return;
-    if(video.readyState === video.HAVE_ENOUGH_DATA){
+    if(video.readyState >= 2 && video.videoWidth > 0){
       const vw = video.videoWidth, vh = video.videoHeight;
       if(vw && vh){
         const scale = Math.min(1, MAX_SCAN_DIM / Math.max(vw, vh));
