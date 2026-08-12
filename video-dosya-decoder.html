@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Video'dan Dosya Çöz — Dosya Işını</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#111826; --panel2:#0d1420; --line:#1e2a3d;
+    --ink:#e7ecef; --dim:#7d8ba1; --signal:#39ff88; --signal-dim:#1c8a52;
+    --warn:#ff9d5c; --err:#ff5c7a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:radial-gradient(circle at 50% -10%, #10192a 0%, var(--bg) 55%);
+    color:var(--ink); font-family:system-ui,sans-serif; padding:20px 16px 40px;
+  }
+  .wrap{max-width:520px; margin:0 auto;}
+  h1{font-size:22px; margin:6px 0 2px;}
+  .sub{color:var(--dim); font-size:13px; margin-bottom:18px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:16px;}
+  .panel h2{font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin:0 0 12px; font-family:monospace;}
+  .dropzone{border:1.5px dashed var(--line); border-radius:14px; padding:26px 16px; text-align:center; cursor:pointer;}
+  .dropzone .t1{font-weight:600; font-size:15px;}
+  .dropzone .t2{color:var(--dim); font-size:12px; margin-top:4px;}
+  #fileInput{display:none;}
+  video{width:100%; border-radius:12px; border:1px solid var(--line); display:block; margin-top:12px;}
+  .btn{width:100%; padding:14px; border-radius:12px; border:none; font-weight:700; font-size:14px;
+       letter-spacing:.03em; cursor:pointer; text-transform:uppercase; margin-top:10px;}
+  .btn-primary{background:var(--signal); color:#04140a;}
+  .btn-primary:disabled{background:var(--signal-dim); color:#0a1a12; opacity:.6;}
+  .btn-secondary{background:transparent; border:1px solid var(--line); color:var(--ink);}
+  .row{display:flex; align-items:center; justify-content:space-between; margin:14px 0 6px; font-size:13px; color:var(--dim);}
+  .row .val{font-family:monospace; color:var(--signal);}
+  .progress-bar{height:8px; background:var(--panel2); border-radius:6px; overflow:hidden; border:1px solid var(--line);}
+  .progress-fill{height:100%; background:linear-gradient(90deg,var(--signal-dim),var(--signal)); width:0%; transition:width .1s;}
+  .log{font-family:monospace; font-size:11px; color:var(--dim); max-height:110px; overflow-y:auto; margin-top:10px; line-height:1.6;}
+  .result-img{width:100%; border-radius:14px; border:1px solid var(--line); margin-top:10px; display:block;}
+  .result-file{display:flex; align-items:center; gap:12px; margin-top:10px; background:var(--panel2); border:1px solid var(--line); border-radius:14px; padding:14px;}
+  .result-file .icon{width:44px; height:44px; border-radius:10px; background:var(--signal-dim); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;}
+  .result-file .name{font-size:13px; word-break:break-all;}
+  a.download-link{display:block; text-align:center; margin-top:10px; padding:14px; border-radius:12px;
+       background:var(--signal); color:#04140a; font-weight:700; text-decoration:none; text-transform:uppercase; font-size:13px;}
+  .badge-warn{display:inline-block; background:rgba(255,157,92,.1); color:var(--warn); border:1px solid rgba(255,157,92,.3);
+       padding:8px 12px; border-radius:10px; font-size:12px; line-height:1.5; margin-bottom:14px;}
+  #hiddenCanvas{display:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Video'dan Dosya Çöz</h1>
+  <div class="sub">Kameraya izin verilmeyen tarayıcılar için: taranan QR akışının videosunu yükle, herhangi bir dosya otomatik yeniden birleşsin.</div>
+
+  <div class="badge-warn">Video, gönderen tarafın ekranındaki QR akışının çekimi olmalı. Video ne kadar netse ve QR karesi ne kadar net görünüyorsa çözüm o kadar sağlıklı olur.</div>
+
+  <div class="panel">
+    <h2>1 · Video Seç</h2>
+    <div class="dropzone" id="dropzone">
+      <div class="t1">Video dosyası seç</div>
+      <div class="t2">MP4 / MOV / WEBM</div>
+    </div>
+    <input type="file" id="fileInput" accept="video/*">
+    <video id="video" muted playsinline style="display:none;"></video>
+  </div>
+
+  <div class="panel" id="scanPanel" style="display:none;">
+    <h2>2 · Tara & Çöz</h2>
+    <div class="row"><span>Örnekleme hızı (sn'de kare)</span><span class="val" id="rateVal">8</span></div>
+    <input type="range" id="rateSlider" min="2" max="20" value="8" style="width:100%;">
+    <button class="btn btn-primary" id="scanBtn">Taramayı Başlat</button>
+    <button class="btn btn-secondary" id="resetBtn">Sıfırla</button>
+
+    <div class="row" style="margin-top:16px;"><span id="sidLabel">Oturum: —</span><span class="val" id="pctLabel">%0</span></div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel" id="resultPanel" style="display:none;">
+    <h2>Sonuç</h2>
+    <img id="resultImg" class="result-img" style="display:none;">
+    <div class="result-file" id="resultFileBox" style="display:none;">
+      <div class="icon">📄</div>
+      <div class="name" id="resultFileName">—</div>
+    </div>
+    <a id="downloadLink" class="download-link" download="dosya-isini-alinan">İndir</a>
+  </div>
+</div>
+
+<canvas id="hiddenCanvas"></canvas>
+
+<script>
+(function(){
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const video = document.getElementById('video');
+  const scanPanel = document.getElementById('scanPanel');
+  const rateSlider = document.getElementById('rateSlider');
+  const rateVal = document.getElementById('rateVal');
+  const scanBtn = document.getElementById('scanBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const sidLabel = document.getElementById('sidLabel');
+  const pctLabel = document.getElementById('pctLabel');
+  const progressFill = document.getElementById('progressFill');
+  const logEl = document.getElementById('log');
+  const resultPanel = document.getElementById('resultPanel');
+  const resultImg = document.getElementById('resultImg');
+  const resultFileBox = document.getElementById('resultFileBox');
+  const resultFileName = document.getElementById('resultFileName');
+  const downloadLink = document.getElementById('downloadLink');
+  const canvas = document.getElementById('hiddenCanvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  let currentSid = null;
+  let receivedMap = {};
+  let expectedTotal = null;
+  let metaInfo = null;
+  let scanning = false;
+  let finished = false;
+
+  function log(msg){
+    const line = document.createElement('div');
+    line.textContent = msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if(!f) return;
+    const url = URL.createObjectURL(f);
+    video.src = url;
+    video.style.display = 'block';
+    scanPanel.style.display = 'block';
+    resultPanel.style.display = 'none';
+    resetState();
+  });
+
+  rateSlider.addEventListener('input', () => rateVal.textContent = rateSlider.value);
+
+  function resetState(){
+    currentSid = null;
+    receivedMap = {};
+    expectedTotal = null;
+    metaInfo = null;
+    finished = false;
+    sidLabel.textContent = 'Oturum: —';
+    pctLabel.textContent = '%0';
+    progressFill.style.width = '0%';
+    logEl.innerHTML = '';
+  }
+  resetBtn.addEventListener('click', resetState);
+
+  function handlePayload(payload){
+    const parts = payload.split('|');
+    if(parts.length < 4) return;
+    const sid = parts[0];
+    const idx = parseInt(parts[1], 10);
+    const total = parseInt(parts[2], 10);
+    if(isNaN(idx) || isNaN(total)) return;
+
+    if(currentSid && currentSid !== sid){
+      log(`Yeni oturum tespit edildi (${sid}), sıfırlanıyor...`);
+      receivedMap = {};
+      metaInfo = null;
+    }
+    currentSid = sid;
+    expectedTotal = total;
+    sidLabel.textContent = 'Oturum: ' + sid;
+
+    if(idx === 0 && parts[3] === 'META'){
+      if(!metaInfo){
+        const metaStr = parts.slice(4).join('|');
+        const [mime, encName] = metaStr.split('::');
+        metaInfo = { mime: mime, name: decodeURIComponent(encName || 'dosya') };
+        log(`Dosya bilgisi alındı: ${metaInfo.name}`);
+      }
+    } else {
+      if(receivedMap[idx - 1] === undefined){
+        receivedMap[idx - 1] = parts.slice(3).join('|');
+        log(`Parça ${idx}/${total - 1} alındı`);
+      }
+    }
+
+    const count = Object.keys(receivedMap).length + (metaInfo ? 1 : 0);
+    const pct = Math.round((count / total) * 100);
+    progressFill.style.width = pct + '%';
+    pctLabel.textContent = '%' + pct;
+
+    const dataTotal = total - 1;
+    if(metaInfo && Object.keys(receivedMap).length >= dataTotal){
+      finishDecoding(dataTotal);
+    }
+  }
+
+  function finishDecoding(dataTotal){
+    let base64 = '';
+    for(let i = 0; i < dataTotal; i++){
+      if(receivedMap[i] === undefined) return;
+      base64 += receivedMap[i];
+    }
+    const mime = metaInfo.mime || 'application/octet-stream';
+    const dataUrl = `data:${mime};base64,${base64}`;
+    downloadLink.href = dataUrl;
+    downloadLink.download = metaInfo.name || 'dosya-isini-alinan';
+
+    if(mime.startsWith('image/')){
+      resultImg.src = dataUrl;
+      resultImg.style.display = 'block';
+      resultFileBox.style.display = 'none';
+    } else {
+      resultImg.style.display = 'none';
+      resultFileBox.style.display = 'flex';
+      resultFileName.textContent = metaInfo.name;
+    }
+    resultPanel.style.display = 'block';
+    log('Dosya başarıyla yeniden birleştirildi.');
+    finished = true;
+    stopScan();
+  }
+
+  function stopScan(){
+    scanning = false;
+    scanBtn.textContent = 'Taramayı Başlat';
+    scanBtn.disabled = false;
+  }
+
+  async function scanVideo(){
+    if(scanning) return;
+    scanning = true;
+    scanBtn.textContent = 'Taranıyor...';
+    scanBtn.disabled = true;
+
+    const fps = parseInt(rateSlider.value, 10);
+    const step = 1 / fps;
+
+    video.pause();
+    video.currentTime = 0;
+    await waitForSeek(video);
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    while(scanning && !finished && video.currentTime < video.duration - step/2){
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imgData.data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' });
+      if(code && code.data){
+        handlePayload(code.data);
+        if(finished) break;
+      }
+      const nextTime = video.currentTime + step;
+      if(nextTime >= video.duration) break;
+      video.currentTime = nextTime;
+      await waitForSeek(video);
+    }
+
+    if(!finished){
+      log('Video sonuna ulaşıldı. Bazı parçalar eksik olabilir, video yeniden yüklenip tekrar denenebilir veya örnekleme hızı artırılabilir.');
+    }
+    stopScan();
+  }
+
+  function waitForSeek(v){
+    return new Promise((resolve) => {
+      const onSeeked = () => { v.removeEventListener('seeked', onSeeked); resolve(); };
+      v.addEventListener('seeked', onSeeked);
+    });
+  }
+
+  scanBtn.addEventListener('click', scanVideo);
+})();
+</script>
+</body>
+</html>
